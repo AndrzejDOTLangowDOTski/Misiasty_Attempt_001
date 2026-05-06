@@ -1,61 +1,72 @@
 from typing import Final
 import os
+import logging
 from dotenv import load_dotenv
 from discord import Intents, Client, Message
 from responses import get_response
- 
-# STEP 0: LOAD OUR TOKEN FROM SOMEWHERE SAFE
-load_dotenv()
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
+log = logging.getLogger(__name__)
+
+# Szuka .env w tym samym katalogu co main.py
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+load_dotenv(os.path.join(BASE_DIR, '.env'))
 TOKEN: Final[str] = os.getenv('DISCORD_TOKEN')
- 
-# STEP 1: BOT SETUP
+
+if not TOKEN:
+    raise ValueError("DISCORD_TOKEN nie znaleziony w pliku .env!")
+
 intents: Intents = Intents.default()
-intents.message_content = True  # NOQA
+intents.message_content = True
 client: Client = Client(intents=intents)
- 
- 
-# STEP 2: MESSAGE FUNCTIONALITY
+
+
 async def send_message(message: Message, user_message: str) -> None:
     if not user_message:
-        print('(Message was empty because intents were not enabled probably)')
         return
- 
-    if is_private := user_message[0] == '?':
+
+    is_private: bool = user_message.startswith('?')
+    if is_private:
         user_message = user_message[1:]
- 
+
     try:
-        response1: str = str(message.author.name)
-        response2: str = get_response(user_message)
-        response: str = '@'+response1 + ' ' + response2
-        await message.author.send(response) if is_private else await message.channel.send(response)
+        response = get_response(user_message)
+        if response is None:
+            return  # Bot milczy gdy nie rozpoznaje komendy
+        full_response: str = f'@{message.author.name} {response}'
+        if is_private:
+            await message.author.send(full_response)
+        else:
+            await message.channel.send(full_response)
     except Exception as e:
-        print(e)
- 
- 
-# STEP 3: HANDLING THE STARTUP FOR OUR BOT
+        log.error(f'Blad wysylania wiadomosci: {e}')
+
+
 @client.event
 async def on_ready() -> None:
-    print(f'{client.user} is now running!')
- 
- 
-# STEP 4: HANDLING INCOMING MESSAGES
+    log.info(f'{client.user} is now running!')
+
+
 @client.event
 async def on_message(message: Message) -> None:
     if message.author == client.user:
         return
- 
+
     username: str = str(message.author)
     user_message: str = message.content
     channel: str = str(message.channel)
- 
-    print(f'[{channel}] {username}: "{user_message}"')
+
+    log.info(f'[{channel}] {username}: "{user_message}"')
     await send_message(message, user_message)
- 
- 
-# STEP 5: MAIN ENTRY POINT
+
+
 def main() -> None:
-    client.run(token=TOKEN)
- 
- 
+    client.run(token=TOKEN, reconnect=True)
+
+
 if __name__ == '__main__':
     main()
